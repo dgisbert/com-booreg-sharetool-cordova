@@ -2,32 +2,28 @@
 <html>
 <head>
     <title></title>
+    
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <link rel="stylesheet" href="js/jquery.mobile-1.4.5.min.css">
+
+    <script type="text/javascript" src="cordova.js"></script>
     <script src="js/jquery-2.1.4.min.js"></script>
     <script src="js/jquery.mobile-1.4.5.min.js"></script>
 
     <script src="//www.parsecdn.com/js/parse-1.6.7.min.js"></script>
 
     <script type="text/javascript">
-    
-        function OpenDetail(id)
-        {
-            var str =  "";
-            
-            str += '<ul id="properties" data-role="listview" data-inset="true">';
-            str += '<li><a href="javascript:OpenDetail(1)"><img src="img1.png">Texto de la herramienta</a></li>';
-            str += '<li><a href="javascript:OpenDetail(2)"><img src="img2.png">Texto de la herramienta2</a></li>';
-            str += '</ul>'
 
-            $("#view_properties").html(str);
-            
-            $("#view_list").html("");
+    	var globalToolList ; // Global variable that stores results of searches
+    	var currentPosition; // Stores current user's position
 
-        }
+    	/*
+    	    Ready function. Called when page ends loading.
+    	*/
 
-        $(document).ready
+    	$(document).ready
         (
             function ()
             {
@@ -35,22 +31,26 @@
 	            // Parse initialization
 
 	            Parse.initialize("2QePHKyrZMo0v7Q6grxWepfQxUqaSqbx0AMAAExI", "XKDJRAJDAAVt5FuXRI0nAINKPDx5vlltsiGGhVO8");
-/* 
-	            var TestObject = Parse.Object.extend("TestObject");
-	            var testObject = new TestObject();
-	            testObject.save({foo: "bar2"}).then(function(object) {
-	              alert("yay! it worked");
-	            });
-            	
- */	            $("#login").on("click",
+
+                // Event listeners to elements on the page.
+                
+                // Login button
+                
+                $("#login").on("click",
 	            	function()
 	                {
 	            	    doLogin($("#username").val(), $("#password").val());
 	            	}
 	            );
 	            
+                // Search button
+ 
 				$("#search").on("click", function() { doSearch(); });
-	        }
+                
+                // Logout button
+				 
+				$("#logout").on("click", function() { logout(); });
+            }
 	    );
 
 	    /*
@@ -77,36 +77,72 @@
 	    /*
 			Searches data with the given user constraints 
 		*/
-		
+
 		function doSearch()
 	    {
+		    navigator.geolocation.getCurrentPosition(geolocationSuccess, geolocationError);
+	    	
 			var Tool = Parse.Object.extend("Tool");
 			var query = new Parse.Query(Tool);
+
+	        // Text filter
+
+			var searchText = $("#searchText").val();
+			
+			if (searchText)
+			{
+	            var nameQuery = new Parse.Query(Tool).contains("name", searchText);
+	            var dscrQuery = new Parse.Query(Tool).contains("dscr", searchText);
+				
+	            query = Parse.Query.or(nameQuery, dscrQuery);
+			}
+			
+	        // Distance filter
+
+	        var dist = $("#dist").val();
+
+	        if (dist && currentPosition)
+	    	{
+	    		query.withinKilometers("posi", currentPosition, dist);
+	    	}
+
+	        // Price filter
+
+	        var pric = $("#pric").val();
+	        
+	        if (pric && isNumeric(pric)) query.lessThanOrEqualTo("pric", Number(pric));
+
+	    	// User id filter
+
+			query.notEqualTo("owid", Parse.User.current());
+
+	        // Do query
 
 			query.find(
 			    {
 				    success: function(results)
 				    {
+				        globalToolList = results;
+
 			            var str =  "";
-			            
+
 			            str += '<ul id="toolList" data-role="listview" data-inset="true">';
-			
+
 				    	// Insert HTML code for each result given
-				    	
-					    for (var i = 0; i < results.length; i++)
+
+					    for (var i = 0; i < globalToolList.length; i++)
 					    {
-					        var object = results[i];
-					        
+					        var object = globalToolList[i];
+
 				            str += '<li>';
-				            str += '<div>';
-				            str += '<a href="javascript:OpenDetail("' + i + '")"><img src="img/bullet.png">' + object.get('name') + '</a>';
-				            str += '</div>';
+				            str += '<a href="javascript:openDetail(' + i + ');">' + object.get('name');
 				            str += '<div>';
 				            str += 'Price:' + object.get('pric');
 				            str += '</div>';
 				            str += '<div>';
-				            str += 'Distance:' + object.get('dist');
+				            if (currentPosition) str += 'Distance:' + currentPosition.kilometersTo(object.get('posi')).toFixed(2);
 				            str += '</div>';
+				            str += '</a>';
 				            str += '</li>';
 				        }
 			            str += '</ul>';
@@ -122,8 +158,67 @@
 				}
 			);
 	    }
-    
 
+	    /*
+	        Opens the detail view of the tool selected. 
+	    */
+	    
+        function openDetail(elementIndex)
+        {
+	    	var tool = globalToolList[elementIndex];
+	    	
+            $("#detailToolName").html(tool.get('name'));
+            $("#detailToolPric").html(tool.get('pric'));
+            if (currentPosition) $("#detailToolDist").html(currentPosition.kilometersTo(tool.get('posi')).toFixed(2));
+            
+            window.location = "#toolDetail";
+        }
+
+	    /*
+            Makes a logout 
+        */
+    
+	    function logout()
+	    {
+	    	Parse.User.logOut();
+
+	        window.location = "index.html";
+	    }
+	    
+	    // Utility functions
+	    
+	    function isNumeric(n)
+	    {
+	        return !isNaN(parseFloat(n)) && isFinite(n);
+	    }
+	    
+	    // onSuccess function for geolocation
+	    
+	    function geolocationSuccess(position)
+	    {
+	    	currentPosition = new Parse.GeoPoint({latitude: position.coords.latitude, longitude: position.coords.longitude});
+	    	
+	    	$("#latitude").html(position.coords.latitude.toFixed(3));
+	    	$("#longitude").html(position.coords.longitude.toFixed(3));
+	    }
+	    
+	    // onError function for geolocation
+	    
+	    function geolocationError(error)
+	    {
+	    	alert('code: '    + error.code    + '\n' +
+	              'message: ' + error.message + '\n');
+	    }
+	    
+	    /*
+	        Returns distance of the given position
+	    */
+	    
+	    function getDistance(positionA, positionB)
+	    {
+	    	return positionA.kilometersTo(positionB); 
+	    }
+	    
     </script>
 
 </head>
@@ -146,25 +241,33 @@
 	
 	<!-- Tool List page -->
 	<div data-role="page" id="toollist">
-	
-		<div data-role="header"> <h1>ShareTool</h1> </div>
+
+		<div data-role="header">
+			<h1>ShareTool</h1>
+            <a id="logout" class="ui-btn-right">Logout</a>
+		</div>
 	
 		<div role="main" class="ui-content">
 
-			<div style="display:flex"><label>Long</label><label>Lat</label></div>
-			<div style="display:flex;">
+			<div style="display:flex" class="ui-field-contain">
+			    <label>Lat</label>
+			    <label id="latitude"></label>
+			    <label>Long</label>
+			    <label id="longitude"></label>
+			</div>
+			<div style="display:flex;" class="ui-field-contain">
 			    <label>Dist:</label>
 				<input type="number" size="4" id="dist" placeholder="km" />
 			    <label>Price</label>
-				<input type="number" size="4" id="price" placeholder="€" />
+				<input type="number" size="4" id="pric" placeholder="€" />
 			</div>
-			<div style="display:flex">
+			<div style="display:flex" class="ui-field-contain">
 				<input type="text" size="20" id="searchText" placeholder="Enter search text" />
     			<a id="search" class="ui-btn ui-shadow ui-corner-all" href="#toollist">
 					<img src="img/search.png" height="32" width="32"></img>
                 </a>
 			</div>
-			<div style="display:flex">
+			<div style="display:flex" class="ui-field-contain">
 			    <label for="orderBy">Order by</label>
 			    <select name="orderBy" id="orderBy">
 			      <option selected="selected">By price asc</option>
@@ -175,27 +278,28 @@
 			    </select>
 			</div>
 
-			<div id="toolListDiv">
-			</div>
+			<form>
+				<div id="toolListDiv">
+				</div>
+			</form>
+
 		</div>
 	
 	</div>
 
 	<!-- Tool detail -->
-	<div data-role="page" id="tooldetail">
+	<div data-role="page" id="toolDetail">
 	
-		<div data-role="header"> <h1>ShareTool</h1> </div>
-	
+		<div data-role="header">
+            <a data-rel="back" data-icon="back">Back</a>
+		    <h1>Tool detail</h1>
+		</div>
+
 		<div role="main" class="ui-content">
 
-			<label for="detailToolName"></label>
-			<ol data-role="listview">
-			    <li>Acura</li>
-			    <li>Audi</li>
-			    <li>BMW</li>
-			    <li>Cadillac</li>
-			    <li>Ferrari</li>
-			</ol>
+			<label for="detailToolName">Tool name</label> <label id="detailToolName"></label>
+			<label for="detailToolPric">Price</label> <label id="detailToolPric"></label>
+			<label for="detailToolDist">Distance</label> <label id="detailToolDist"></label>
 
 		</div>
 	
